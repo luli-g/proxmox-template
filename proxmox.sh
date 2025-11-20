@@ -96,42 +96,40 @@ for i in "${!ALL_IFACES[@]}"; do
 done
 echo ""
 
-# Sekundäre IPs erkennen und entfernen
-echo -e "${BLUE}── Sekundäre IP-Adressen prüfen ──${NC}"
-FOUND_SECONDARY=false
+# Sekundäre und ungewollte primäre IPs erkennen und entfernen
+echo -e "${BLUE}── Bestehende IP-Adressen prüfen ──${NC}"
 
 for IFACE in "${ALL_IFACES[@]}"; do
-    # Alle sekundären IPs für dieses Interface finden
-    SECONDARY_IPS=$(ip -4 addr show "$IFACE" 2>/dev/null | grep "secondary" | grep -oP '(?<=inet\s)\d+(\.\d+){3}/\d+' || true)
+    # Alle IPs für dieses Interface finden
+    ALL_IPS=$(ip -4 addr show "$IFACE" 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}/\d+' || true)
     
-    if [[ -n "$SECONDARY_IPS" ]]; then
-        FOUND_SECONDARY=true
-        echo -e "${YELLOW}Sekundäre IPs auf $IFACE gefunden:${NC}"
-        while IFS= read -r SEC_IP; do
-            echo -e "  - ${RED}$SEC_IP${NC}"
-        done <<< "$SECONDARY_IPS"
+    if [[ -n "$ALL_IPS" ]]; then
+        echo -e "${YELLOW}IPs auf $IFACE:${NC}"
+        IP_NUM=1
+        while IFS= read -r IP; do
+            IS_SEC=""
+            if ip -4 addr show "$IFACE" 2>/dev/null | grep "$IP" | grep -q "secondary"; then
+                IS_SEC=" (sekundär)"
+            fi
+            echo -e "  $IP_NUM. ${RED}$IP${NC}$IS_SEC"
+            ((IP_NUM++))
+        done <<< "$ALL_IPS"
     fi
 done
 
-if [[ "$FOUND_SECONDARY" == true ]]; then
-    echo ""
-    read -p "Alle sekundären IP-Adressen jetzt entfernen? (j/n): " REMOVE_SECONDARY
-    
-    if [[ "$REMOVE_SECONDARY" =~ ^[jJyY]$ ]]; then
-        for IFACE in "${ALL_IFACES[@]}"; do
-            SECONDARY_IPS=$(ip -4 addr show "$IFACE" 2>/dev/null | grep "secondary" | grep -oP '(?<=inet\s)\d+(\.\d+){3}/\d+')
-            
-            if [[ -n "$SECONDARY_IPS" ]]; then
-                while IFS= read -r SEC_IP; do
-                    echo -e "Entferne ${RED}$SEC_IP${NC} von $IFACE..."
-                    ip addr del "$SEC_IP" dev "$IFACE" 2>/dev/null || true
-                done <<< "$SECONDARY_IPS"
-            fi
-        done
-        echo -e "${GREEN}✓ Sekundäre IP-Adressen entfernt${NC}"
-    fi
-else
-    echo -e "${GREEN}Keine sekundären IP-Adressen gefunden${NC}"
+echo ""
+read -p "IP-Adressen zum Entfernen eingeben (z.B. 192.168.178.84/24, leer=überspringen): " REMOVE_IP
+
+if [[ -n "$REMOVE_IP" ]]; then
+    # Prüfen auf welchem Interface die IP liegt
+    for IFACE in "${ALL_IFACES[@]}"; do
+        if ip -4 addr show "$IFACE" 2>/dev/null | grep -q "$REMOVE_IP"; then
+            echo -e "Entferne ${RED}$REMOVE_IP${NC} von $IFACE..."
+            ip addr del "$REMOVE_IP" dev "$IFACE" 2>/dev/null || true
+            echo -e "${GREEN}✓ IP-Adresse entfernt${NC}"
+            break
+        fi
+    done
 fi
 
 echo ""
